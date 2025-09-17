@@ -1,26 +1,28 @@
 // src/lib/idb.ts
-import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
+import { openDB, type DBSchema, type IDBPDatabase, type StoreNames } from 'idb'
 import { toRaw } from 'vue'
+import type { Dashboard, Widget, View } from '@/stores/dashboard'
 
-// 🔧 робимо звичайний plain-об'єкт (без Proxy/refs/functions)
+// Make sure values are plain JSON (no Vue proxies/functions)
 function toPlain<T>(v: T): T {
-  // знімаємо верхній Proxy
   const raw = toRaw(v) as any
-  // глибока серіалізація у JSON (нашi дані — прості POJO, тож ок)
   return JSON.parse(JSON.stringify(raw))
 }
 
 interface FinanceDB extends DBSchema {
-  dashboards: { key: string; value: any }
-  widgets: { key: string; value: any }
-  views: { key: string; value: any }
+  dashboards: { key: string; value: Dashboard }
+  widgets: { key: string; value: Widget }
+  views: { key: string; value: View }
 
-  snapshot_dashboards: { key: string; value: any }
-  snapshot_widgets: { key: string; value: any }
-  snapshot_views: { key: string; value: any }
+  snapshot_dashboards: { key: string; value: Dashboard }
+  snapshot_widgets: { key: string; value: Widget }
+  snapshot_views: { key: string; value: View }
 
   meta: { key: string; value: any }
 }
+
+// Use the exact literal union that idb expects
+type StoreName = StoreNames<FinanceDB>;
 
 let _db: IDBPDatabase<FinanceDB> | null = null
 
@@ -42,16 +44,16 @@ export async function getDB() {
   return _db
 }
 
-export async function putMany<T>(store: keyof FinanceDB, entries: Record<string, T>) {
+export async function putMany<T>(store: StoreName, entries: Record<string, T>) {
   const db = await getDB()
   const tx = db.transaction(store, 'readwrite')
   for (const [k, v] of Object.entries(entries)) {
-    await tx.store.put(toPlain(v), k)   // ← 👈 важливо
+    await tx.store.put(toPlain(v) as any, k)
   }
   await tx.done
 }
 
-export async function getAll<T>(store: keyof FinanceDB): Promise<Record<string, T>> {
+export async function getAll<T>(store: StoreName): Promise<Record<string, T>> {
   const db = await getDB()
   const tx = db.transaction(store, 'readonly')
   const keys = await tx.store.getAllKeys()
@@ -63,12 +65,12 @@ export async function getAll<T>(store: keyof FinanceDB): Promise<Record<string, 
   return out
 }
 
-export async function putOne<T>(store: keyof FinanceDB, key: string, value: T) {
+export async function putOne<T>(store: StoreName, key: string, value: T) {
   const db = await getDB()
-  await db.put(store, toPlain(value) as any, key)  // ← 👈 і тут
+  await db.put(store, toPlain(value) as any, key)
 }
 
-export async function clearStore(store: keyof FinanceDB) {
+export async function clearStore(store: StoreName) {
   const db = await getDB()
   await db.clear(store)
 }

@@ -59,6 +59,7 @@
  */
 import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import type * as Y from 'yjs' // <-- TS types
 import { useDashStore } from '@/stores/dashboard'
 import { useCollab } from '@/collab/provide'
 
@@ -89,7 +90,7 @@ watch(widgetRef, (w) => (titleBuffer.value = w?.title ?? ''), { immediate: true 
 
 // Active tab (tracks view.id)
 const activeViewId = ref<string>('')
-watch(views, (arr) => {
+watch(views, (arr: Array<{ id: string }>) => {   // <-- type the lambda param
   if (!arr?.length) return
   if (!arr.find(v => v.id === activeViewId.value)) activeViewId.value = arr[0].id
 }, { immediate: true })
@@ -99,8 +100,8 @@ const collab = useCollab()
 
 function setRangeViaY(viewId: string, range: '7d' | '30d' | '90d') {
   if (!collab) return
-  const root = collab.doc.getMap('state')
-  const yViews = root.get('views')
+  const root = collab.doc.getMap('state') as Y.Map<any>
+  const yViews = root.get('views') as Y.Map<any>
   const v = yViews.get(viewId) || {}
   const state = { ...(v.state || {}), dateRange: range }
   collab.doc.transact(() => yViews.set(viewId, { ...v, state }))
@@ -110,8 +111,8 @@ function renameViaY() {
   const newTitle = titleBuffer.value
   if (!newTitle || newTitle === widgetRef.value?.title) return
   if (!collab) return
-  const root = collab.doc.getMap('state')
-  const yWidgets = root.get('widgets')
+  const root = collab.doc.getMap('state') as Y.Map<any>
+  const yWidgets = root.get('widgets') as Y.Map<any>
   const w = yWidgets.get(props.widgetId) || {}
   collab.doc.transact(() => yWidgets.set(props.widgetId, { ...w, title: newTitle }))
 }
