@@ -46,7 +46,6 @@ function onWindowResize() {
 
 onMounted(() => {
   render()
-  // авто-ресайз при зміні контейнера (не лише вікна)
   ro = new ResizeObserver(() => chart?.resize())
   if (el.value) ro.observe(el.value)
   window.addEventListener('resize', onWindowResize)
@@ -59,11 +58,9 @@ onBeforeUnmount(() => {
   chart = null
 })
 
-// якщо вкладка стала активною — дайте ECharts шанс порахувати розміри
 watch(() => props.active, (isActive) => {
   if (isActive) nextTick(() => chart?.resize())
 })
 
-// оновлюємо дані при зміні стану в’ю
 watch(() => view.value?.state, () => render(), { deep: true })
 </script>
