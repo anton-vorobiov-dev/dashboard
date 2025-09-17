@@ -2,11 +2,9 @@
   <Card>
     <template #title>
       <div class="flex items-center justify-between">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <i class="pi" :class="widgetRef?.type === 'chart' ? 'pi-chart-line' : 'pi-table'" />
-            <span>{{ widgetRef?.title }}</span>
-          </div>
+        <div class="flex items-center gap-2">
+          <i class="pi" :class="widgetRef?.type === 'chart' ? 'pi-chart-line' : 'pi-table'" />
+          <span>{{ widgetRef?.title }}</span>
           <Tag v-if="isDirty" value="Unsaved" severity="warning" />
         </div>
 
@@ -20,20 +18,36 @@
       <Tabs v-model:value="activeViewId" scrollable>
         <TabList>
           <Tab v-for="view in views" :key="view.id" :value="view.id">
-            Tab: {{ view.name }}
+            {{ view.name }}
           </Tab>
         </TabList>
 
         <TabPanels>
           <TabPanel v-for="view in views" :key="view.id" :value="view.id">
             <div class="flex items-center gap-2 mb-2">
-              <Button label="Last 7d" size="small" outlined @click="setRangeViaY(view.id, '7d')" />
-              <Button label="30d" size="small" outlined @click="setRangeViaY(view.id, '30d')" />
-              <Button label="90d" size="small" outlined @click="setRangeViaY(view.id, '90d')" />
+              <!-- range controls -->
+              <template v-if="view?.state?.chartKind !== 'donut'">
+                <Button label="Last 7d" size="small" :outlined="view.state.dateRange !== '7d'"
+                  @click="setRangeViaY(view.id, '7d')" />
+                <Button label="30d" size="small" :outlined="view.state.dateRange !== '30d'"
+                  @click="setRangeViaY(view.id, '30d')" />
+                <Button label="90d" size="small" :outlined="view.state.dateRange !== '90d'"
+                  @click="setRangeViaY(view.id, '90d')" />
+              </template>
               <Tag v-if="isViewDirty(view.id)" value="view changed" severity="info" />
+
+              <!-- chart kind selector (per view) -->
+              <div class="ml-auto flex items-center gap-2">
+                <span class="text-xs text-surface-500">Chart:</span>
+                <SelectButton :options="chartKindOptions as any" optionLabel="label" optionValue="value"
+                  :modelValue="view?.state?.chartKind ?? 'line'"
+                  @update:modelValue="(v: 'line' | 'bar' | 'donut') => setChartKindViaY(view.id, v)" :allowEmpty="false"
+                  size="small" />
+              </div>
             </div>
 
-            <ChartView v-if="widgetRef?.type === 'chart'" :view-id="view.id" :active="activeViewId === view.id" />
+            <component v-if="widgetRef?.type === 'chart'" :is="viewChartComp(view)" :view-id="view.id"
+              :active="activeViewId === view.id" :key="widgetRef?.type + view.id" />
             <div v-else class="p-3 border rounded">Table placeholder</div>
           </TabPanel>
         </TabPanels>
@@ -54,12 +68,12 @@
 
 <script setup lang="ts">
 /**
- * Widget frame without any per-widget presence.
- * Edits are written directly to Y.Doc; Y->Pinia binding in the parent updates UI.
+ * Adds per-view chart kind selector: 'line' | 'bar' | 'donut'
+ * Stores selection in view.state.chartKind (in Y.Doc) so both tabs see it.
  */
 import { computed, ref, watch } from 'vue'
+import type * as Y from 'yjs'
 import { storeToRefs } from 'pinia'
-import type * as Y from 'yjs' // <-- TS types
 import { useDashStore } from '@/stores/dashboard'
 import { useCollab } from '@/collab/provide'
 
@@ -72,11 +86,15 @@ import TabList from 'primevue/tablist'
 import Tab from 'primevue/tab'
 import TabPanels from 'primevue/tabpanels'
 import TabPanel from 'primevue/tabpanel'
+import SelectButton from 'primevue/selectbutton'
 
-import ChartView from '@/components/chart/ChartView.vue'
+import ChartView from './chart/ChartView.vue'
+import BarChartView from './chart/BarChartView.vue'
+import DonutChartView from './chart/DonutChartView.vue'
+
+type ChartKind = 'line' | 'bar' | 'donut'
 
 const props = defineProps<{ widgetId: string }>()
-
 const dash = useDashStore()
 const { widget, widgetViews, isWidgetDirty, isViewDirty } = storeToRefs(dash) as any
 
@@ -88,22 +106,29 @@ const saving = computed(() => !!dash.saving.widget[props.widgetId])
 const titleBuffer = ref('')
 watch(widgetRef, (w) => (titleBuffer.value = w?.title ?? ''), { immediate: true })
 
-// Active tab (tracks view.id)
 const activeViewId = ref<string>('')
-watch(views, (arr: Array<{ id: string }>) => {   // <-- type the lambda param
+watch(views, (arr: Array<{ id: string }>) => {
   if (!arr?.length) return
   if (!arr.find(v => v.id === activeViewId.value)) activeViewId.value = arr[0].id
 }, { immediate: true })
 
-// Write edits directly into Y.Doc (parent observes Y->Pinia)
 const collab = useCollab()
 
 function setRangeViaY(viewId: string, range: '7d' | '30d' | '90d') {
   if (!collab) return
   const root = collab.doc.getMap('state') as Y.Map<any>
   const yViews = root.get('views') as Y.Map<any>
-  const v = yViews.get(viewId) || {}
+  const v = (yViews.get(viewId) as any) || {}
   const state = { ...(v.state || {}), dateRange: range }
+  collab.doc.transact(() => yViews.set(viewId, { ...v, state }))
+}
+
+function setChartKindViaY(viewId: string, kind: ChartKind) {
+  if (!collab) return
+  const root = collab.doc.getMap('state') as Y.Map<any>
+  const yViews = root.get('views') as Y.Map<any>
+  const v = (yViews.get(viewId) as any) || {}
+  const state = { ...(v.state || {}), chartKind: kind }
   collab.doc.transact(() => yViews.set(viewId, { ...v, state }))
 }
 
@@ -113,27 +138,27 @@ function renameViaY() {
   if (!collab) return
   const root = collab.doc.getMap('state') as Y.Map<any>
   const yWidgets = root.get('widgets') as Y.Map<any>
-  const w = yWidgets.get(props.widgetId) || {}
+  const w = (yWidgets.get(props.widgetId) as any) || {}
   collab.doc.transact(() => yWidgets.set(props.widgetId, { ...w, title: newTitle }))
 }
 
-// Save/Reset use your existing store actions (snapshots + IndexedDB)
 function save() { dash.saveWidget(props.widgetId) }
 function resetWidgetLocal() { dash.resetWidget(props.widgetId) }
-</script>
 
-<script lang="ts">
-export default {
-  components: {
-    Card, Button, Tag, InputText,
-    Tabs, TabList, Tab, TabPanels, TabPanel,
-    ChartView
-  }
+// helper to pick component by kind
+function viewChartComp(view: any) {
+  const kind: ChartKind = view?.state?.chartKind ?? 'line'
+  return kind === 'bar' ? BarChartView : kind === 'donut' ? DonutChartView : ChartView
 }
+
+const chartKindOptions = [
+  { label: 'Line', value: 'line' },
+  { label: 'Bar', value: 'bar' },
+  { label: 'Donut', value: 'donut' }
+] as const
 </script>
 
 <style scoped>
-/* Keep the card layout height; underlying element still has .p-card class */
 .p-card {
   min-height: 420px;
   display: flex;

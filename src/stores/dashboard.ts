@@ -11,6 +11,7 @@ export interface View {
   state: {
     dateRange?: '7d' | '30d' | '90d'
     metric?: 'price' | 'volume'
+    chartKind: 'line' | 'bar' | 'donut'
   }
 }
 export interface Widget {
@@ -131,9 +132,9 @@ export const useDashStore = defineStore('dash', {
         const d1: Dashboard = { id: 'd1', name: 'My Dashboard', widgetIds: ['w1', 'w2'] }
         const w1: Widget = { id: 'w1', dashboardId: 'd1', type: 'chart', title: 'AAPL Price', viewIds: ['v1','v2'] }
         const w2: Widget = { id: 'w2', dashboardId: 'd1', type: 'chart', title: 'MSFT Volume', viewIds: ['v3'] }
-        const v1: View = { id: 'v1', name: 'AAPL Price first chart',  state: { dateRange: '7d',  metric: 'price' } }
-        const v2: View = { id: 'v2', name: 'AAPL Price second chart', state: { dateRange: '30d', metric: 'price' } }
-        const v3: View = { id: 'v3', name: 'MSFT Volume first chart', state: { dateRange: '90d', metric: 'volume' } }
+        const v1: View = { id: 'v1', name: 'AAPL Price first chart',  state: { dateRange: '7d',  chartKind: 'bar', metric: 'price' } }
+        const v2: View = { id: 'v2', name: 'AAPL Price second chart', state: { dateRange: '30d', chartKind: 'donut', metric: 'price' } }
+        const v3: View = { id: 'v3', name: 'MSFT Volume first chart', state: { dateRange: '30d', chartKind: 'line', metric: 'volume' } }
 
         this.dashboards[d1.id] = d1
         this.widgets[w1.id] = w1
