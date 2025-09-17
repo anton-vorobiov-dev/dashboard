@@ -109,7 +109,6 @@ export const useDashStore = defineStore('dash', {
     // -------- Bootstrap / Seed / Hydrate ----------
     async bootstrap() {
       if (this._bootstrapped) return
-      // Спробуємо витягти стан із IndexedDB
       const [d, w, v, sd, sw, sv] = await Promise.all([
         getAll<Dashboard>('dashboards'),
         getAll<Widget>('widgets'),
@@ -132,9 +131,9 @@ export const useDashStore = defineStore('dash', {
         const d1: Dashboard = { id: 'd1', name: 'My Dashboard', widgetIds: ['w1', 'w2'] }
         const w1: Widget = { id: 'w1', dashboardId: 'd1', type: 'chart', title: 'AAPL Price', viewIds: ['v1','v2'] }
         const w2: Widget = { id: 'w2', dashboardId: 'd1', type: 'chart', title: 'MSFT Volume', viewIds: ['v3'] }
-        const v1: View = { id: 'v1', name: 'Last 7d',  state: { dateRange: '7d',  metric: 'price' } }
-        const v2: View = { id: 'v2', name: 'Last 30d', state: { dateRange: '30d', metric: 'price' } }
-        const v3: View = { id: 'v3', name: 'Last 90d', state: { dateRange: '90d', metric: 'volume' } }
+        const v1: View = { id: 'v1', name: 'AAPL Price first chart',  state: { dateRange: '7d',  metric: 'price' } }
+        const v2: View = { id: 'v2', name: 'AAPL Price second chart', state: { dateRange: '30d', metric: 'price' } }
+        const v3: View = { id: 'v3', name: 'MSFT Volume first chart', state: { dateRange: '90d', metric: 'volume' } }
 
         this.dashboards[d1.id] = d1
         this.widgets[w1.id] = w1
@@ -150,7 +149,7 @@ export const useDashStore = defineStore('dash', {
         this.snapshots.views[v2.id] = clone(v2)
         this.snapshots.views[v3.id] = clone(v3)
 
-        // початковий запис у IndexedDB
+        // init IndexedDB
         await Promise.all([
           putMany('dashboards', this.dashboards),
           putMany('widgets', this.widgets),
@@ -190,17 +189,16 @@ export const useDashStore = defineStore('dash', {
     async saveWidget(widgetId: ID) {
       this.saving.widget[widgetId] = true
       try {
-        // (опційно) подивитись що саме зберігаємо
         // const payload = this.widgetDiff(widgetId)
 
-        // імітуємо API-запит
+        // mock API-request
         await new Promise((r) => setTimeout(r, 250))
 
         // оновлюємо snapshots у пам'яті
         this.markSaved('widget', widgetId)
         for (const vid of this.widgets[widgetId].viewIds) this.markSaved('view', vid)
 
-        // persist snapshots в IndexedDB
+        // persist snapshots in IndexedDB
         await Promise.all([
           putOne('snapshot_widgets', widgetId, this.snapshots.widgets[widgetId]),
           ...this.widgets[widgetId].viewIds.map((vid) =>
@@ -210,7 +208,6 @@ export const useDashStore = defineStore('dash', {
       } catch (err) {
         console.error('[saveWidget] failed:', err)
       } finally {
-        // ГАРАНТОВАНО зупиняємо лоадер, навіть якщо були помилки
         this.saving.widget[widgetId] = false
       }
     },
@@ -221,14 +218,13 @@ export const useDashStore = defineStore('dash', {
         // const diffs = this.dashboards[dashboardId].widgetIds.map((wid) => ({ widgetId: wid, changes: this.widgetDiff(wid) }))
         await new Promise((r) => setTimeout(r, 350))
 
-        // оновлюємо snapshots у пам'яті
         this.markSaved('dashboard', dashboardId)
         for (const wid of this.dashboards[dashboardId].widgetIds) {
           this.markSaved('widget', wid)
           for (const vid of this.widgets[wid].viewIds) this.markSaved('view', vid)
         }
 
-        // persist snapshots в IndexedDB
+        // persist snapshots in IndexedDB
         await Promise.all([
           putOne('snapshot_dashboards', dashboardId, this.snapshots.dashboards[dashboardId]),
           ...this.dashboards[dashboardId].widgetIds.map((wid) =>
@@ -247,7 +243,6 @@ export const useDashStore = defineStore('dash', {
       }
     },
 
-    // опційно: створення нового віджета, теж одразу пишемо в IDB
     async addWidget(dashboardId: ID, payload: { type: WidgetType; title: string; view?: Partial<View> }) {
       const id = crypto.randomUUID()
       const viewId = crypto.randomUUID()
@@ -278,16 +273,14 @@ export const useDashStore = defineStore('dash', {
       const ws = this.snapshots.widgets[widgetId]
       if (!ws) return
 
-      // відновлюємо сам віджет (title, type, viewIds ...)
       this.widgets[widgetId] = JSON.parse(JSON.stringify(ws))
 
-      // відновлюємо всі view цього віджета зі знімків
       for (const vid of ws.viewIds) {
         const vs = this.snapshots.views[vid]
         if (vs) this.views[vid] = JSON.parse(JSON.stringify(vs))
       }
 
-      // persist у IndexedDB (поточний стан; snapshots не чіпаємо)
+      // persist in IndexedDB
       await putOne('widgets', widgetId, this.widgets[widgetId])
       await Promise.all(
         ws.viewIds.map((vid) => putOne('views', vid, this.views[vid]))
@@ -298,11 +291,9 @@ export const useDashStore = defineStore('dash', {
       const ds = this.snapshots.dashboards[dashboardId]
       if (!ds) return
 
-      // відновлюємо дашборд (назва, список віджетів)
       this.dashboards[dashboardId] = JSON.parse(JSON.stringify(ds))
       await putOne('dashboards', dashboardId, this.dashboards[dashboardId])
 
-      // відновлюємо кожен віджет та його view зі знімків
       for (const wid of ds.widgetIds) {
         const ws = this.snapshots.widgets[wid]
         if (!ws) continue

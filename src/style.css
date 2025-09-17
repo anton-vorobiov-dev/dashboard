@@ -1,0 +1,4 @@
+/* src/style.css */
+@layer base, primeui, components, utilities;
+
+@import "tailwindcss";
