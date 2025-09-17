@@ -11,7 +11,7 @@ export interface View {
   state: {
     dateRange?: '7d' | '30d' | '90d'
     metric?: 'price' | 'volume'
-    chartKind: 'line' | 'bar' | 'donut'
+    chartKind?: 'line' | 'bar' | 'donut'
   }
 }
 export interface Widget {
