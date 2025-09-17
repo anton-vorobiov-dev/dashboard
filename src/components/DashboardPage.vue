@@ -21,6 +21,12 @@
       <WidgetFrame v-for="wid in dashboardRef?.widgetIds" :key="wid" :widget-id="wid" />
     </div>
   </div>
+
+  <CursorsOverlay />
+
+  <div v-if="isShowHint && online?.length === 1" class="px-4 w-max">
+    <Message>Hint: Open the app in another tab to see the session sharing feature.</Message>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -30,11 +36,13 @@
  * - Binds Y state -> Pinia (observeDeep) to reflect realtime edits.
  * - Uses BroadcastChannel for local "multiplayer" dev testing.
  */
-import { onMounted, onBeforeUnmount, computed } from 'vue'
+import { onMounted, onBeforeUnmount, computed, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useDashStore } from '@/stores/dashboard'
 import WidgetFrame from '@/components/WidgetFrame.vue'
 import PresenceBar from '@/components/PresenceBar.vue'
+import CursorsOverlay from '@/components/CursorsOverlay.vue'
+import Message from 'primevue/message'
 
 import Button from 'primevue/button'
 import Badge from 'primevue/badge'
@@ -46,6 +54,7 @@ import { IndexeddbPersistence } from 'y-indexeddb'
 import { initLocalBroadcast } from '@/collab/useLocalBroadcast'
 import { provideCollab } from '@/collab/provide'
 import { getOrCreateIdentity } from '@/collab/names'
+import { usePresence, startPresence, stopPresence } from '@/collab/usePresence'
 
 const dash = useDashStore()
 const { dashboard, countDirtyWidgets } = storeToRefs(dash) as any
@@ -64,6 +73,9 @@ let cleanup: Array<() => void> = []
 const doc = new Y.Doc()
 const awareness = new Awareness(doc)
 provideCollab({ doc, awareness, destroy: () => { } })
+
+startPresence(awareness)
+const isShowHint = ref(false)
 
 onMounted(async () => {
   // Load current & snapshots from IndexedDB (your store bootstrap)
@@ -117,9 +129,17 @@ onMounted(async () => {
   // Dev multiplayer via BroadcastChannel (replace with Supabase in prod)
   const bc = initLocalBroadcast(dashboardId, doc, awareness)
   cleanup.push(() => bc.destroy())
+
+  setTimeout(() => {
+    isShowHint.value = true
+  }, 5000);
 })
 
-onBeforeUnmount(() => cleanup.forEach(fn => fn()))
+const { online } = usePresence()
+onBeforeUnmount(() => {
+  cleanup.forEach(fn => fn())
+  stopPresence()
+})
 </script>
 
 <script lang="ts">

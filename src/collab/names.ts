@@ -40,8 +40,7 @@ export function getOrCreateIdentity(): Identity {
 }
 
 export function initials(name: string) {
-  return name
-    .trim()
+  return name?.trim()
     .split(/\s+/)
     .map(w => w[0]?.toUpperCase() ?? '')
     .join('')

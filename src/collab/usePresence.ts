@@ -1,10 +1,10 @@
-// Global presence (Figma-style) atop the whole page using Y.js Awareness.
-// - Keeps a heartbeat to mark the local user as "online".
-// - Exposes a reactive `online` list of users (fresh within STALE_MS).
-// - No per-widget/view tracking here.
+// src/collab/usePresence.ts
+// Presence service (Figma-style) with explicit start/stop and a tiny hook.
+// - No Vue lifecycle APIs here, so it can be used anywhere without warnings.
+// - DashboardPage should call startPresence(awareness) once and stopPresence() on unmount.
 
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { useCollab } from './provide'
+import { ref, computed } from 'vue'
+import type { Awareness } from 'y-protocols/awareness'
 
 export type PresenceUser = {
   userId: string
@@ -13,57 +13,66 @@ export type PresenceUser = {
   lastSeen?: number
 }
 
-const STALE_MS = 15_000   // consider user offline if no heartbeat for 15s
+const STALE_MS = 15_000
 const HEARTBEAT_MS = 5_000
 
+let awarenessRef: Awareness | null = null
+let hbTimer: number | null = null
+let tickTimer: number | null = null
+let offAwareness: (() => void) | null = null
+
+const onlineRef = ref<PresenceUser[]>([])
+
+function recompute() {
+  if (!awarenessRef) { onlineRef.value = []; return }
+  const t = Date.now()
+  const arr = Array.from(awarenessRef.getStates().values()) as PresenceUser[]
+  onlineRef.value = arr.filter(s => (t - (s.lastSeen ?? 0)) < STALE_MS)
+}
+
+function heartbeat() {
+  if (!awarenessRef) return
+  awarenessRef.setLocalStateField('lastSeen', Date.now())
+}
+
+function onVisibility() {
+  if (document.visibilityState === 'visible') heartbeat()
+}
+
+/** Call once per page after you have an Awareness instance */
+export function startPresence(a: Awareness) {
+  if (awarenessRef) return // already started
+  awarenessRef = a
+
+  const onAw = () => recompute()
+  a.on('update', onAw)
+  offAwareness = () => a.off('update', onAw)
+
+  // initial push
+  heartbeat()
+  recompute()
+
+  // timers
+  hbTimer = window.setInterval(heartbeat, HEARTBEAT_MS)
+  tickTimer = window.setInterval(recompute, 1000)
+
+  // visibility refresh
+  document.addEventListener('visibilitychange', onVisibility)
+}
+
+/** Call on page unmount */
+export function stopPresence() {
+  if (!awarenessRef) return
+  offAwareness?.()
+  offAwareness = null
+  if (hbTimer) { clearInterval(hbTimer); hbTimer = null }
+  if (tickTimer) { clearInterval(tickTimer); tickTimer = null }
+  document.removeEventListener('visibilitychange', onVisibility)
+  awarenessRef = null
+  onlineRef.value = []
+}
+
+/** Tiny hook to read the reactive list */
 export function usePresence() {
-  const collab = useCollab() // provided synchronously in DashboardPage
-  const now = ref(Date.now())
-  const version = ref(0)     // bumps on awareness updates to trigger recompute
-
-  let heartbeatTimer: number | null = null
-  let tickTimer: number | null = null
-  let detachAwareness: (() => void) | null = null
-
-  // Pull all awareness states (non-reactive by default) and make it reactive
-  const states = computed<PresenceUser[]>(() => {
-    void version.value
-    if (!collab) return []
-    return Array.from(collab.awareness.getStates().values()) as PresenceUser[]
-  })
-
-  // Filter only "fresh" users
-  const online = computed<PresenceUser[]>(() => {
-    const t = now.value
-    return states.value.filter(s => (t - (s.lastSeen ?? 0)) < STALE_MS)
-  })
-
-  function heartbeatOnce() {
-    if (!collab) return
-    collab.awareness.setLocalStateField('lastSeen', Date.now())
-  }
-
-  onMounted(() => {
-    if (collab) {
-      const onAwarenessUpdate = () => (version.value++)
-      collab.awareness.on('update', onAwarenessUpdate)
-      detachAwareness = () => collab.awareness.off('update', onAwarenessUpdate)
-      heartbeatOnce()
-    }
-    heartbeatTimer = window.setInterval(heartbeatOnce, HEARTBEAT_MS)
-    tickTimer = window.setInterval(() => (now.value = Date.now()), 1_000)
-
-    const onVis = () => { if (document.visibilityState === 'visible') heartbeatOnce() }
-    document.addEventListener('visibilitychange', onVis)
-    const prev = detachAwareness
-    detachAwareness = () => { prev && prev(); document.removeEventListener('visibilitychange', onVis) }
-  })
-
-  onBeforeUnmount(() => {
-    if (heartbeatTimer) clearInterval(heartbeatTimer)
-    if (tickTimer) clearInterval(tickTimer)
-    detachAwareness && detachAwareness()
-  })
-
-  return { online }
+  return { online: computed(() => onlineRef.value) }
 }
